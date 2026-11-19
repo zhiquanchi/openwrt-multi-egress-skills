@@ -1,103 +1,87 @@
-# openwrt-proxy-dual-egress
+# openwrt-multi-egress-skills
 
-一个 **Agent Skill**（Claude Code / CodeBuddy / DeepSeek Harness 等通用 `SKILL.md` 格式），用于诊断并修复：
+一组面向 **OpenWrt / 软路由多出口排障**的 Agent Skill，通用 `SKILL.md` 格式（Claude Code / CodeBuddy / DeepSeek Harness 等均可直接加载）。
 
-> **OpenWrt 软路由上，同一个服务被分流规则拆成两个出口，导致 Google Gemini 报「检测到异常流量」，页面上写着 `IP 地址 A ≠ IP 地址 B`。**
+方法论来自两次真实的家庭 + 办公混合网络排障：一台 Kwrt 25.12.2 软路由，同时挂着家庭 5G 中继、办公 WiFi（门户认证）、USB 网卡，跑着 mesl 托管的 mihomo 透明代理。
 
-顺带覆盖同根因的一类问题：Google 账号页 / reCAPTCHA / OAuth 偶发失败、登录后提示地区不支持、以及"为什么同一个网站的请求走了两个节点"。
+## 包含两个 skill
 
-## 问题长什么样
+| Skill | 解决什么 |
+|---|---|
+| [`openwrt-proxy-dual-egress`](skills/openwrt-proxy-dual-egress/SKILL.md) | 同一服务被分流规则拆成两个出口 → Gemini 报「异常流量」，页面显示 `IP A ≠ IP B` |
+| [`openwrt-multi-wan-routing`](skills/openwrt-multi-wan-routing/SKILL.md) | 配置多条上行（双 WiFi / USB / 双有线），让**指定流量走指定 WAN**，并处理门户认证、代理劫持、持久化 |
 
-打开 `https://gemini.google.com/app`，被拦：
-
-```
-我们的系统检测到您的计算机网络中存在异常流量。请稍后重新发送请求。
-IP 地址：216.236.32.1 ≠ 216.232.68.147
-时间：2026-11-18T10:10:24Z
-网址：https://gemini.google.com/app
-```
-
-`≠` 两边的 IP 是"同一会话、两条出口"的铁证。原因是路由器按域名分流时，把 `gemini.google.com`（`🤖 AI` 策略组）和登录鉴权 `accounts.google.com`、静态资源 `ssl.gstatic.com`（`🔍 Google` 策略组或直连）送进了**不同出口**。Google 的前端网关校验会话时发现来源 IP 割裂，判定为异常自动化流量。
-
-## 这个 skill 包含什么
-
-```
-SKILL.md                                   # 触发描述 + 五步标准流程 + 常见误判
-references/
-  remote-diagnosis-playbook.md             # AI 不在用户局域网时怎么"信息回流"
-  mihomo-api-recipes.md                     # mihomo 控制 API 速查（查/切/验证）
-  fix-strategies.md                         # 四种修复方案 + Xray/sing-box/passwall 等价做法
-  symptom-triage.md                         # 现象 ↔ 根因对照，区分双出口/地区/DNS/QUIC/IPv6
-scripts/
-  diag-egress.sh                            # 路由器上一键收集诊断信息（busybox 兼容）
-  egress_api_probe.py                       # 输出「策略组 → 当前节点」表并判定双出口
-  egress_verify.sh                          # 修复后验证出口 IP 是否收敛
-```
+两个 skill 共享同一套底层认知：**包的命运在 `prerouting` 就被代理决定了**，改路由之前先确认有没有被劫持。
 
 ## 安装
 
-把整个目录放到你所用 Agent 的 skills 目录下即可（目录名即 skill 名）：
-
 ```bash
-git clone https://github.com/zhiquanchi/openwrt-proxy-dual-egress.git ~/.claude/skills/openwrt-proxy-dual-egress
-# CodeBuddy:  ~/.codebuddy/skills/
-# DSH:        ~/.dsh/skills/
+git clone https://github.com/zhiquanchi/openwrt-multi-egress-skills.git
+cp -r openwrt-multi-egress-skills/skills/* ~/.claude/skills/       # Claude Code
+# cp -r .../skills/* ~/.codebuddy/skills/                          # CodeBuddy
+# cp -r .../skills/* ~/.dsh/skills/                                # DeepSeek Harness
 ```
 
-Agent 会根据 `SKILL.md` frontmatter 里的 `description` 自动选择是否加载。
+目录名即 skill 名，Agent 依据 frontmatter 的 `description` 自动选择加载。
 
-## 手动使用（不装 skill 也能用）
+## 目录结构
 
-在路由器上（`ssh root@192.168.x.1`）：
+```
+skills/
+  openwrt-proxy-dual-egress/
+    SKILL.md
+    references/   remote-diagnosis-playbook.md
+                  mihomo-api-recipes.md
+                  fix-strategies.md
+                  symptom-triage.md
+    scripts/      diag-egress.sh        # 路由器上一次性收集诊断信息
+                  egress_api_probe.py   # 策略组 → 当前节点表，判定双出口
+                  egress_verify.sh      # 修复后验证出口是否收敛
 
-```sh
-sh scripts/diag-egress.sh          # 一次跑完：内核识别、配置路径、规则归属、策略组
+  openwrt-multi-wan-routing/
+    SKILL.md
+    references/   topology-and-limits.md
+                  transparent-proxy-conflicts.md
+                  portal-auth.md
+                  persistence.md
+    scripts/      topo_probe.sh         # 多 WAN 拓扑一次性采集
+                  wan_check.sh          # 单条线路探测（OK/BLOCKED/LIMITED）
+                  binding_guard.sh      # 出口绑定幂等保活
+                  binding-guard.init    # procd 服务包装
 ```
 
-看两组出口是否一致：
+## 核心结论速记
 
-```sh
-python3 scripts/egress_api_probe.py            # AI 组 vs Google 组
-python3 scripts/egress_api_probe.py --json     # 机器可读
-```
+**双出口（Gemini 异常流量）**
 
-最快止血（把 AI 组切到 Google 组当前节点，不改配置文件）：
+- `IP A ≠ IP B` = 同一会话走了两条出口。常见成因：`gemini.google.com` 在 `🤖 AI` 组，`accounts.google.com` 在 `🔍 Google` 组。
+- `select` 型策略组**各自记住选择**，两组 `proxies` 列表一样不代表出口一样。
+- 先拿 `now` 证据（mihomo API `/proxies`）再改配置。
 
-```sh
-python3 scripts/egress_api_probe.py --switch '🤖 AI' '🔍 Google'
-```
+**多 WAN 指定出口**
 
-修复后验证：
-
-```sh
-sh scripts/egress_verify.sh                    # 连续取出口 IP，唯一即收敛
-```
-
-## 修复思路速览
-
-| 方案 | 做法 | 适用 |
-|---|---|---|
-| **A 合并规则**（长期） | 把 Gemini 域名并入 `🔍 Google` 组，一个服务一个出口 | 订阅侧支持覆写规则 |
-| **B 对齐节点**（止血） | 两个策略组固定到同一个**具体节点**（别用 Auto/Fallback） | 面板能改，最省事 |
-| **C 全量对照**（验证） | 临时让全部 Google 走直连或全部走代理 | 只为确认根因 |
-| **D 单出口兜底** | `GEOIP,CN,DIRECT` + `MATCH,固定组` | 不想维护细分规则 |
-
-细节、配置片段、验证清单见 [`references/fix-strategies.md`](references/fix-strategies.md)。
+- 一个接口一条上行；两个 STA 挂在同一个 interface 上不算双 WAN。
+- 无线能否多 STA/STA+AP，看 `iw phy` 的 `valid interface combinations`，不是想当然。
+- 透明代理在 `prerouting` 把流量 `redirect` 到本机端口，**静态路由和 `ip rule` 都不生效**。
+- 代理规则里写 `DIRECT` **不等于**直连，出口网卡仍不受控。
+- 代理的 nft 表是运行时创建的，`rc.local` 只跑一次会丢；用 procd 周期补。
 
 ## 实测环境
 
-本 skill 的方法论来自一次真实排障：Kwrt 25.12.2（OpenWrt 衍生，mediatek/filogic）+ `mesl-cli` 托管的 mihomo 透明网关。
+Kwrt 25.12.2（OpenWrt 衍生，mediatek/filogic，CMCC RAX3000M）+ mesl-cli 托管的 mihomo 透明网关 + 5G WiFi 中继 / 办公 WiFi（门户认证）/ USB 网卡三条上行。
 
-关键踩坑（都已写进 skill）：
+文中的 IP、节点名、域名均为示例。
 
-- **装了 ≠ 在跑**：`luci-app-passwall2`、`xray-core`、`sing-box` 都装了，但真正在跑的是 `mesl-cli` 拉起的 mihomo，改别的插件毫无作用；
-- **运行时配置不是源配置**：`/dev/shm/mesl-0/runtime.yaml` 每次启动重建，直接改它会在重启/刷新订阅后被覆盖；
-- **YAML 里的 emoji 是转义形式**：`🤖 AI` 写作 `"\U0001F916 AI"`，`🔍 Google` 写作 `"\U0001F50D Google"`；
-- **列表一样 ≠ 出口一样**：`select` 型策略组各自记住用户选择；
-- **远程 AI 进不了局域网**：`WebFetch` 被安全策略拦私有地址，`curl` 只能拿到 LuCI 登录页——必须靠"用户 ssh 执行 + 贴回输出"的信息回流。
+## 验证情况
+
+脚本都在本机做过回归（模拟 mihomo API、模拟 `nft`/`ip` 状态机）：
+
+- 双出口判定 → `--switch` 对齐 → 复判一致，闭环成立；
+- 保活脚本连跑 3 次完全静默（幂等），删光后一轮自动恢复；
+- 密钥泄漏检查：故意埋的密钥串在输出中出现 0 次。
+
+**未在真实 OpenWrt 设备上实跑**——busybox ash 的差异已尽量规避（只用 POSIX 内建与 `nft/ip/curl/awk/grep`），但首次使用仍建议先跑只读的 `topo_probe.sh` 确认输出正常。
 
 ## 许可
 
 [MIT](LICENSE)
-
-文中出现的 IP、节点名、域名均为示例，与任何具体厂商无关。
