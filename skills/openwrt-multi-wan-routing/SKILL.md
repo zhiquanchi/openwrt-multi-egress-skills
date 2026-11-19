@@ -14,6 +14,9 @@ description: 在 OpenWrt / 软路由上配置多条上行（双 WiFi 客户端/�
 - 办公 WiFi 上来的流量不经过透明代理；
 - 多条线路做主备或按权重。
 
+（完整原始输出、两次失败方案、以及被否决的思路见 `references/case-multi-wan-investigation.md`——
+**建议先读它**，里面每个结论都附了当时真实命令的输出。）
+
 真正难的地方**不是配置，而是三个隐形陷阱**（本 skill 的核心）：
 
 1. **出口数量受硬件限制**（无线 STA 是否能在同一射频上共存、LAN 口是否独立）。
@@ -179,6 +182,10 @@ ssh -p <端口> <用户>@<目标> 'echo $SSH_CLIENT'          # 源地址应是�
 
 ## 参考文档
 
+- `references/case-multi-wan-investigation.md` — **现场实录**：十个阶段、原始输出、两次失败方案
+  （只靠 DIRECT / 只靠 fw4 include）、被否决的思路（两层代理、VLAN）。先读这篇再读结论。
+- `references/tooling-gotchas.md` — busybox/curl/ip/nft 的误导性输出清单，每条都带真实报错。
+- `references/script-development-notes.md` — 本 skill 脚本的开发记录：改过几轮、每个 bug 怎么发现的。
 - `references/topology-and-limits.md` — 上行枚举、无线并发能力、DSA、mwan3 选择、硬件上限。
 - `references/transparent-proxy-conflicts.md` — 代理劫持的完整机理与四种解法。
 - `references/portal-auth.md` — 门户认证网络的识别、放行、持久化。

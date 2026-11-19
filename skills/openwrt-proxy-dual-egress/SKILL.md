@@ -16,6 +16,9 @@ IP 地址：216.236.32.1 ≠ 216.232.68.147
 网址：https://gemini.google.com/app
 ```
 
+（完整原始输出与排查过程见 `references/case-gemini-investigation.md`——**建议先读它**，
+它记录了哪一步卡住、哪条结论还没被验证。）
+
 `≠` 两边的 IP 就是"同一会话、两条出口"的铁证。绝大多数是路由器分流规则把 `gemini.google.com`（AI 策略组）和 `accounts.google.com` / `gstatic.com`（通用 Google 策略组或直连）拆到了不同出口。
 
 同类症状（同一根因）：
@@ -133,7 +136,11 @@ curl -s -H "Authorization: Bearer $SECRET" "http://$CTRL/proxies" | tr ',' '\n' 
 
 ## 参考文档
 
+- `references/case-gemini-investigation.md` — **现场实录**：完整原始输出（拦截页、ps、规则行、两组定义），
+  以及卡在哪里、哪些结论已确认、哪些没验证。先读这篇再读结论。
 - `references/remote-diagnosis-playbook.md` — AI 不在局域网时的信息回流套路与翻车点。
 - `references/mihomo-api-recipes.md` — 查策略组、切节点、刷新订阅、读日志的完整 API 用法。
 - `references/fix-strategies.md` — 四种方案的精确配置片段（mihomo / xray / sing-box）。
 - `references/symptom-triage.md` — 现象 ↔ 根因对照表，含账号地区、DNS、QUIC 的区分方法。
+- 工具陷阱（`find: unpaired '('`、sed 对 emoji 静默失败、`ip route get ... from` 误报等）
+  汇总在兄弟 skill 的 `../openwrt-multi-wan-routing/references/tooling-gotchas.md`。

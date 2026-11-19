@@ -30,7 +30,8 @@ cp -r openwrt-multi-egress-skills/skills/* ~/.claude/skills/       # Claude Code
 skills/
   openwrt-proxy-dual-egress/
     SKILL.md
-    references/   remote-diagnosis-playbook.md
+    references/   case-gemini-investigation.md   ★ 现场实录（原始输出、卡点、未验证项）
+                  remote-diagnosis-playbook.md
                   mihomo-api-recipes.md
                   fix-strategies.md
                   symptom-triage.md
@@ -40,7 +41,10 @@ skills/
 
   openwrt-multi-wan-routing/
     SKILL.md
-    references/   topology-and-limits.md
+    references/   case-multi-wan-investigation.md ★ 现场实录（十个阶段、失败方案）
+                  tooling-gotchas.md              # busybox/curl/ip/nft 的误报清单
+                  script-development-notes.md     # 脚本改过几轮、每个 bug 怎么发现
+                  topology-and-limits.md
                   transparent-proxy-conflicts.md
                   portal-auth.md
                   persistence.md
@@ -49,6 +53,9 @@ skills/
                   binding_guard.sh      # 出口绑定幂等保活
                   binding-guard.init    # procd 服务包装
 ```
+
+标 ★ 的两篇是**事实来源**：保留当时的原始命令输出、走过的弯路、试过但无效的方案，
+以及**哪些结论其实没验证过**。结论文档在它们之上做归纳，但原始证据不删。
 
 ## 核心结论速记
 
@@ -79,6 +86,12 @@ Kwrt 25.12.2（OpenWrt 衍生，mediatek/filogic，CMCC RAX3000M）+ mesl-cli �
 - 双出口判定 → `--switch` 对齐 → 复判一致，闭环成立；
 - 保活脚本连跑 3 次完全静默（幂等），删光后一轮自动恢复；
 - 密钥泄漏检查：故意埋的密钥串在输出中出现 0 次。
+
+开发中修掉的真实 bug（详见 `script-development-notes.md`）：
+
+- `egress_verify.sh` 曾把 IPv4 与 IPv6 当成两个出口，**健康网络被判成双出口**；
+- `diag-egress.sh` 的 sed 在 BSD 上对含 emoji 的行静默不匹配，改为 python 解析；
+- `wan_check.sh` 把"`ip` 命令不存在"误判成"接口不存在"。
 
 **未在真实 OpenWrt 设备上实跑**——busybox ash 的差异已尽量规避（只用 POSIX 内建与 `nft/ip/curl/awk/grep`），但首次使用仍建议先跑只读的 `topo_probe.sh` 确认输出正常。
 
