@@ -1,0 +1,39 @@
+#!/bin/sh /etc/rc.common
+# binding-guard.init —— procd 服务：周期调用 /etc/binding_guard.sh
+#
+# 安装：
+#   cp binding_guard.sh    /etc/binding_guard.sh
+#   cp binding-guard.init  /etc/init.d/binding-guard
+#   cat > /etc/binding_guard.conf <<'EOF'
+# BIND_WAN='phy0-sta0'
+# BIND_TARGETS='192.168.128.0/19 172.16.0.0/12 120.255.1.167'
+# BIND_PROXY_TABLE='mihomo'
+# EOF
+#   chmod +x /etc/binding_guard.sh /etc/init.d/binding-guard
+#   /etc/init.d/binding-guard enable
+#   /etc/init.d/binding-guard start
+#
+# 为什么用 procd 而不是 rc.local：
+#   rc.local 只跑一次，且与代理内核启动并行，代理表还没建好就会失败且无重试。
+#   代理表在 mesl/OpenClash 重启时会重建，必须周期补回。
+
+START=95
+STOP=10
+USE_PROCD=1
+
+BIND_INTERVAL="${BIND_INTERVAL:-30}"
+
+start_service() {
+	procd_open_instance
+	procd_set_param command /bin/sh -c \
+		"while true; do /bin/sh /etc/binding_guard.sh; sleep $BIND_INTERVAL; done"
+	procd_set_param respawn 3600 5 0
+	procd_set_param stdout 0
+	procd_set_param stderr 0
+	procd_close_instance
+}
+
+service_triggers() {
+	# 网络与防火墙重载后立刻补一次
+	procd_add_reload_trigger "network" "firewall"
+}
